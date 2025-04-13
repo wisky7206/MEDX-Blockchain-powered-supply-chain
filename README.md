@@ -87,34 +87,4 @@ Follow these instructions to get a copy of the project up and running on your lo
 4.  **Navigate:** Use the sidebar or navigation links to access different sections like Inventory, Orders, Tracking, Profile, and Settings.
 5.  **Interact:** Perform actions relevant to your role, such as adding inventory, creating orders (which will interact with both the database and the blockchain), viewing tracking history, etc.
 
-## Project Structure (Simplified)
-├── app/                      # Next.js App Router pages and layouts
-│   ├── api/                  # Backend API routes
-│   ├── dashboard/            # Role-based dashboard pages
-│   │   ├── [role]/           # Dynamic route for roles
-│   │   │   ├── inventory/
-│   │   │   ├── orders/
-│   │   │   ├── profile/
-│   │   │   ├── settings/
-│   │   │   ├── tracking/
-│   │   │   └── page.tsx      # Main dashboard page
-│   │   └── layout.tsx        # Dashboard layout component
-│   ├── auth/                 # Authentication pages (login, role selection)
-│   └── layout.tsx            # Root layout
-│   └── globals.css           # Global styles
-├── components/               # Reusable React components
-│   ├── ui/                   # Shadcn UI components
-│   └── dashboard-layout.tsx  # Custom layout component
-├── context/                  # React Context providers (e.g., wallet-context.tsx)
-├── contracts/                # Solidity smart contracts (e.g., MedXSupplyChain.json ABI)
-├── hooks/                    # Custom React hooks (e.g., use-toast.ts)
-├── lib/                      # Utility functions, libraries, config (db, contract, utils)
-├── models/                   # Mongoose schemas/models (User, Product, Order)
-├── public/                   # Static assets
-├── styles/                   # Additional styles
-├── .env.local                # Local environment variables (ignored by git)
-├── .gitignore                # Files/folders ignored by git
-├── next.config.mjs           # Next.js configuration
-├── package.json              # Project dependencies and scripts
-├── pnpm-lock.yaml            # PNPM lockfile
-└── tsconfig.json             # TypeScript configuration
+
