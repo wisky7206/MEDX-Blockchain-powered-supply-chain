@@ -1,232 +1,395 @@
-// File: app/dashboard/[role]/settings/page.tsx
 "use client"
 
 import React, { useState, useEffect, use } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useWallet } from '@/context/wallet-context'; // Adjust the path if needed
-import DashboardLayout from '@/components/dashboard-layout'; // Adjust the path if needed
-import { Copy, Save, Edit, Wallet, CheckCircle, AlertCircle } from "lucide-react"; // Import relevant icons
-import { toast } from "@/hooks/use-toast"; // Assuming path is correct, replace if needed
+import { useWallet } from '@/context/wallet-context'; // Adjust path if needed
+import DashboardLayout from '@/components/dashboard-layout'; // Adjust path if needed
+import {
+    Copy, Wallet, CheckCircle, AlertCircle, Moon, Sun, Fingerprint, Trash2, Bell, UserCog, ChevronDown, LogOut // Added new icons
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch"; // Import Switch
+import { useTheme } from "next-themes"; // Import useTheme for dark mode
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"; // Import AlertDialog for confirmations
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select" // Import Select for role change
 
 
-// Define the props for the Settings page, including the 'role' parameter
+// Props interface remains the same
 interface SettingsPageProps {
   params: Promise<{ role: "provider" | "manufacturer" | "distributor" | "retailer" }>;
 }
 
+// Define available roles for selection
+const availableRoles: Array<"provider" | "manufacturer" | "distributor" | "retailer"> = [
+    "provider", "manufacturer", "distributor", "retailer"
+];
+
 const SettingsPage: React.FC<SettingsPageProps> = ({ params }) => {
-  // Unwrap the params promise using React.use()
   const resolvedParams = use(params);
-  const { role } = resolvedParams;
+  // Get the role from the URL params, primarily for layout/display consistency if needed
+  const urlRole = resolvedParams.role;
 
-  const { address, userData, updateUserProfile } = useWallet();
-  const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    companyName: "",
-    email: "",
-    phone: "",
-    location: "",
-    registrationId: "",
-    licenseNumber: "",
-  });
+  const { address, userData, disconnectWallet /* Assume disconnect exists */ } = useWallet(); // Add disconnectWallet if available
+  const { theme, setTheme } = useTheme(); // Hook for dark mode
+
+  // State for various settings
   const [copied, setCopied] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); // For loading state during save
+  const [isPageLoaded, setIsPageLoaded] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false); // Placeholder state
+  const [notificationsEnabled, setNotificationsEnabled] = useState(userData?.billNotificationsEnabled ?? false); // Initialize from userData if available
+  const [selectedRole, setSelectedRole] = useState<string>(userData?.role || urlRole); // Initialize with current role
+  const [isDeleting, setIsDeleting] = useState(false); // Loading state for delete action
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false);
+  const [isChangingRole, setIsChangingRole] = useState(false);
 
-  // Populate form when userData from context is available
+
+  // Update local state when userData from context changes
   useEffect(() => {
     if (userData) {
-      setFormData({
-        name: userData.name || "",
-        companyName: userData.companyName || "",
-        email: userData.email || "",
-        phone: userData.phone || "",
-        location: userData.location || "",
-        registrationId: userData.registrationId || "", // Ensure these exist in your IUser interface
-        licenseNumber: userData.licenseNumber || "",  // Ensure these exist in your IUser interface
-      });
+        setNotificationsEnabled(userData.billNotificationsEnabled ?? false);
+        setSelectedRole(userData.role || urlRole); // Ensure selectedRole reflects fetched role
     }
-  }, [userData]);
 
-  // Handle input changes in edit mode
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setFormData((prev) => ({ ...prev, [id]: value }));
+    // Animation effect
+    const timer = setTimeout(() => {
+        setIsPageLoaded(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [userData, urlRole]);
+
+
+  // --- Handlers for New Settings ---
+
+  const handleThemeChange = (isDark: boolean) => {
+    setTheme(isDark ? 'dark' : 'light');
   };
 
-  // Function to save the updated profile data using the context function
-  const handleSave = async () => {
-    if (!address || !updateUserProfile) {
-      toast({ title: "Error", description: "Wallet not connected or update function unavailable.", variant: "destructive" });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      await updateUserProfile(address, formData);
-      setIsEditing(false);
-      toast({ title: "Success", description: "Profile updated successfully!" });
-    } catch (error: any) {
-      console.error("Error updating profile:", error);
-      toast({ title: "Error", description: error.message || "Failed to update profile.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleBiometricChange = (enabled: boolean) => {
+    // **Requires Implementation**
+    // This would involve complex logic, potentially calling WebAuthn APIs
+    // and backend endpoints to register/deregister credentials.
+    setBiometricEnabled(enabled); // Update UI state only for now
+    toast({ title: "Info", description: "Biometric setting UI updated (implementation required)." });
   };
 
-  // Function to copy wallet address
+  const handleNotificationChange = async (enabled: boolean) => {
+     if (!address) {
+         toast({ title: "Error", description: "Wallet not connected.", variant: "destructive" });
+         return;
+     }
+     setIsSavingNotifications(true);
+     try {
+         // *** Backend Change Needed ***
+         // Need to modify PUT /api/users/[address] to accept { billNotificationsEnabled: boolean }
+         // Assuming updateUserProfile from context handles the PUT request structure
+         // await updateUserProfile(address, { billNotificationsEnabled: enabled });
+
+         // Placeholder until backend is ready:
+         await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
+         console.log("Backend call needed to update notifications to:", enabled);
+         // --- End Placeholder
+
+         setNotificationsEnabled(enabled);
+         toast({ title: "Success", description: `Billing notifications ${enabled ? 'enabled' : 'disabled'}.` });
+     } catch (error: any) {
+         console.error("Error updating notifications:", error);
+         toast({ title: "Error", description: "Failed to update notification settings.", variant: "destructive" });
+         // Revert UI state on failure
+         setNotificationsEnabled(!enabled);
+     } finally {
+         setIsSavingNotifications(false);
+     }
+  };
+
+   const handleRoleChange = async (newRole: string) => {
+       if (!address || !userData || newRole === userData.role) {
+           setSelectedRole(userData?.role || urlRole); // Reset select if no change or error
+           return; // No change or user data unavailable
+       }
+       setIsChangingRole(true);
+       try {
+            // *** Backend Change & Security Consideration Needed ***
+            // 1. Backend: Modify PUT /api/users/[address] OR create a new secure endpoint for role changes.
+            // 2. Security: This action MUST be heavily protected. Who is allowed to change roles? Usually only admins.
+            //    The current API likely prevents role changes by default.
+            // await updateUserProfile(address, { role: newRole });
+
+            // Placeholder until backend is ready:
+            await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
+            console.log("Backend call needed for role change to:", newRole);
+            // --- End Placeholder
+
+            setSelectedRole(newRole); // Update UI optimistically or after success
+            toast({ title: "Role Change Initiated", description: `Role change to ${newRole} requested (requires backend implementation & authorization).` });
+            // You might need to refresh user data or even force re-login after a role change
+       } catch (error: any) {
+           console.error("Error changing role:", error);
+           toast({ title: "Error", description: "Failed to change role.", variant: "destructive" });
+           setSelectedRole(userData.role); // Revert dropdown on failure
+       } finally {
+           setIsChangingRole(false);
+       }
+   };
+
+
+  const handleDeleteAccount = async () => {
+     if (!address) {
+         toast({ title: "Error", description: "Wallet not connected.", variant: "destructive" });
+         return;
+     }
+     setIsDeleting(true);
+     try {
+         // *** Backend Endpoint Needed ***
+         // Create a secure DELETE /api/users/me or DELETE /api/users/[address] endpoint.
+         // This endpoint must handle data deletion/anonymization securely.
+         // await axios.delete(`/api/users/${address}`); // Example API call
+
+         // Placeholder until backend is ready:
+         await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+         console.log("Backend DELETE endpoint needed for address:", address);
+         // --- End Placeholder
+
+         toast({ title: "Account Deletion Initiated", description: "Your account deletion process has started." });
+         // Disconnect wallet and redirect user after deletion
+         disconnectWallet?.(); // Call disconnect if available from context
+         // Redirect logic here, e.g., router.push('/login');
+     } catch (error: any) {
+         console.error("Error deleting account:", error);
+         toast({ title: "Error", description: "Failed to delete account.", variant: "destructive" });
+     } finally {
+         setIsDeleting(false);
+         // Close the dialog - handled by AlertDialogAction onClick
+     }
+  };
+
+
   const copyAddress = () => {
     if (address) {
       navigator.clipboard.writeText(address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      toast({ title: "Copied!", description: "Wallet address copied to clipboard." });
     }
   };
 
-   // Determine color based on role
-   const roleColor =
-    role === "provider" || role === "retailer" ? "primary" : role === "manufacturer" ? "secondary" : "accent";
+  // Use URL role for determining the theme color accent, if desired
+  const roleColor = urlRole === "provider" || urlRole === "retailer" ? "primary" : urlRole === "manufacturer" ? "secondary" : "accent";
 
 
   return (
-    // Assuming DashboardLayout accepts role prop
-    <DashboardLayout role={role}>
+    <DashboardLayout role={userData?.role || urlRole as any}> {/* Pass user's actual role */}
       <div className="flex flex-col gap-8">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage your profile and account settings</p>
+            <p className="text-sm text-muted-foreground mt-1">Manage your application and account settings</p>
           </div>
-          {/* Toggle Edit/Save Button */}
-          <Button
-             onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
-             className="cyber-button" // Assuming cyber-button class exists
-             disabled={isLoading}
-           >
-            {isEditing ? (
-              <>
-                {isLoading ? (
-                    <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-background border-t-primary"></div>
-                ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                )}
-                {isLoading ? 'Saving...' : 'Save Changes'}
-              </>
-            ) : (
-              <>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Profile
-              </>
-            )}
-          </Button>
+           {/* Optional: Add a general save button if multiple settings need saving at once,
+               or rely on individual toggles/actions saving immediately.
+               For simplicity, removed the top-level edit/save button. */}
         </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
-          {/* Profile Information Card */}
-          <motion.div
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             transition={{ duration: 0.3 }}
-             className="relative"
-           >
-             <div
-               className={`absolute -inset-0.5 rounded-lg bg-gradient-to-br from-${roleColor} to-${roleColor}/30 opacity-30 blur-sm`}
-             ></div>
+        {/* Settings Sections */}
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+
+           {/* Appearance Card */}
+           <div className={`relative transition-all duration-500 ${isPageLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`} style={{ transitionDelay: '100ms' }}>
+             <div className={`absolute -inset-0.5 rounded-lg bg-gradient-to-br from-${roleColor} to-${roleColor}/30 opacity-30 blur-sm`}></div>
              <Card className="border border-border/50 bg-background/50 backdrop-blur-sm">
-                <CardHeader>
-                 <CardTitle>Profile Information</CardTitle>
-                 <CardDescription>
-                   View and edit your personal and business details.
-                 </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    {/* Form fields using formData state */}
-                    <div className="space-y-2">
-                     <Label htmlFor="name">Name</Label>
-                     <Input id="name" value={formData.name} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                    </div>
-                    <div className="space-y-2">
-                     <Label htmlFor="companyName">Company Name</Label>
-                     <Input id="companyName" value={formData.companyName} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                    </div>
-                    <div className="space-y-2">
-                     <Label htmlFor="email">Email</Label>
-                     <Input id="email" type="email" value={formData.email} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                    </div>
-                    <div className="space-y-2">
-                     <Label htmlFor="phone">Phone</Label>
-                     <Input id="phone" value={formData.phone} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                    </div>
-                    <div className="space-y-2">
-                     <Label htmlFor="location">Location</Label>
-                     <Input id="location" value={formData.location} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                    </div>
-                 </CardContent>
-             </Card>
-          </motion.div>
-
-          {/* Account Information Card */}
-          <motion.div
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             transition={{ duration: 0.3, delay: 0.1 }}
-             className="relative"
-          >
-            <div
-               className={`absolute -inset-0.5 rounded-lg bg-gradient-to-br from-${roleColor} to-${roleColor}/30 opacity-30 blur-sm`}
-             ></div>
-            <Card className="border border-border/50 bg-background/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle>Account Information</CardTitle>
-                <CardDescription>
-                  Your wallet address and verification status.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Wallet Address Display */}
-                <div className="space-y-2">
-                  <Label>Wallet Address</Label>
-                  <div className="flex items-center gap-2">
-                    <Input value={address || "Not connected"} disabled className="font-mono text-sm border-border/50 bg-background/80 backdrop-blur-sm" />
-                    <Button variant="outline" size="icon" className="cyber-button" onClick={copyAddress} disabled={!address}>
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {copied && <p className="text-xs text-primary mt-1">Address copied!</p>}
-                </div>
-                {/* Role Display */}
-                <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Input value={role} disabled className="border-border/50 bg-background/80 backdrop-blur-sm capitalize" />
-                </div>
-                {/* Verification Status */}
-                <div className="space-y-2">
-                   <Label>Verification Status</Label>
-                   <div className="flex items-center gap-2 text-sm">
-                    {userData?.verified ? (
-                     <> <CheckCircle className="h-4 w-4 text-emerald-500" /> <span className="text-emerald-500">Verified</span> </>
-                    ) : (
-                     <> <AlertCircle className="h-4 w-4 text-amber-500" /> <span className="text-amber-500">Not Verified</span> </>
-                    )}
+               <CardHeader>
+                 <CardTitle>Appearance</CardTitle>
+                 <CardDescription>Customize the look and feel.</CardDescription>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                 <div className="flex items-center justify-between rounded-lg border p-4">
+                   <div className="space-y-0.5">
+                     <Label htmlFor="dark-mode" className="text-base">Dark Mode</Label>
+                     <p className="text-sm text-muted-foreground">Enable dark theme.</p>
                    </div>
-                </div>
-                 {/* Registration and License Info */}
-                <div className="space-y-2">
-                  <Label htmlFor="registrationId">Registration ID</Label>
-                  <Input id="registrationId" value={formData.registrationId} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="licenseNumber">License Number</Label>
-                  <Input id="licenseNumber" value={formData.licenseNumber} onChange={handleInputChange} disabled={!isEditing} className="border-border/50 bg-background/80 backdrop-blur-sm"/>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </div>
+                   <Switch
+                     id="dark-mode"
+                     checked={theme === 'dark'}
+                     onCheckedChange={handleThemeChange}
+                     aria-label="Toggle dark mode"
+                   />
+                 </div>
+               </CardContent>
+             </Card>
+           </div>
+
+            {/* Notifications Card */}
+           <div className={`relative transition-all duration-500 ${isPageLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`} style={{ transitionDelay: '200ms' }}>
+             <div className={`absolute -inset-0.5 rounded-lg bg-gradient-to-br from-${roleColor} to-${roleColor}/30 opacity-30 blur-sm`}></div>
+             <Card className="border border-border/50 bg-background/50 backdrop-blur-sm">
+               <CardHeader>
+                 <CardTitle>Notifications</CardTitle>
+                 <CardDescription>Manage your notification preferences.</CardDescription>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                 <div className="flex items-center justify-between rounded-lg border p-4">
+                   <div className="space-y-0.5">
+                     <Label htmlFor="bill-notifications" className="text-base">Billing Notifications</Label>
+                     <p className="text-sm text-muted-foreground">Receive email notifications for billing.</p>
+                   </div>
+                   <Switch
+                     id="bill-notifications"
+                     checked={notificationsEnabled}
+                     onCheckedChange={handleNotificationChange}
+                     disabled={isSavingNotifications}
+                     aria-label="Toggle billing notifications"
+                   />
+                 </div>
+                  {/* Add more notification toggles here if needed */}
+               </CardContent>
+             </Card>
+           </div>
+
+           {/* Security Card */}
+           <div className={`relative transition-all duration-500 ${isPageLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`} style={{ transitionDelay: '300ms' }}>
+             <div className={`absolute -inset-0.5 rounded-lg bg-gradient-to-br from-${roleColor} to-${roleColor}/30 opacity-30 blur-sm`}></div>
+             <Card className="border border-border/50 bg-background/50 backdrop-blur-sm">
+               <CardHeader>
+                 <CardTitle>Security</CardTitle>
+                 <CardDescription>Manage security settings.</CardDescription>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                 <div className="flex items-center justify-between rounded-lg border p-4">
+                   <div className="space-y-0.5">
+                     <Label htmlFor="biometric-auth" className="text-base">Biometric Authentication</Label>
+                     <p className="text-sm text-muted-foreground">Use fingerprint or face ID.</p>
+                   </div>
+                   <Switch
+                     id="biometric-auth"
+                     checked={biometricEnabled}
+                     onCheckedChange={handleBiometricChange}
+                     aria-label="Toggle biometric authentication"
+                     // Consider disabling if not implemented: disabled={true}
+                   />
+                 </div>
+                  {/* Display Wallet Address */}
+                 <div className="space-y-2 rounded-lg border p-4">
+                   <Label>Connected Wallet</Label>
+                   <div className="flex items-center gap-2">
+                     <Input value={address || "Not connected"} disabled className="font-mono text-sm border-border/50 bg-background/80 backdrop-blur-sm" />
+                     <Button variant="outline" size="icon" className="cyber-button shrink-0" onClick={copyAddress} disabled={!address}>
+                       <Copy className="h-4 w-4" />
+                     </Button>
+                   </div>
+                   {copied && <p className="text-xs text-primary mt-1">Address copied!</p>}
+                 </div>
+
+               </CardContent>
+               {/* Optional Logout Button */}
+                {disconnectWallet && (
+                    <CardFooter>
+                         <Button variant="outline" className="w-full cyber-button" onClick={disconnectWallet}>
+                             <LogOut className="mr-2 h-4 w-4" /> Disconnect Wallet
+                         </Button>
+                    </CardFooter>
+                )}
+             </Card>
+           </div>
+
+            {/* Account Management Card */}
+           <div className={`relative transition-all duration-500 md:col-span-2 lg:col-span-1 ${isPageLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`} style={{ transitionDelay: '400ms' }}>
+             <div className={`absolute -inset-0.5 rounded-lg bg-gradient-to-br from-destructive to-destructive/30 opacity-30 blur-sm`}></div>
+             <Card className="border border-destructive/50 bg-background/50 backdrop-blur-sm">
+               <CardHeader>
+                 <CardTitle>Account Management</CardTitle>
+                 <CardDescription>Manage roles and account status.</CardDescription>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                    {/* Role Display/Change */}
+                    <div className="space-y-2 rounded-lg border p-4">
+                       <Label htmlFor="role-select">User Role</Label>
+                        <Select
+                            value={selectedRole}
+                            onValueChange={handleRoleChange}
+                            disabled={isChangingRole} // Disable while processing
+                            // Add logic to disable based on user permissions if needed
+                        >
+                            <SelectTrigger id="role-select" className="w-full border-border/50 bg-background/80 backdrop-blur-sm capitalize">
+                                <SelectValue placeholder="Select role" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {availableRoles.map((r) => (
+                                    <SelectItem key={r} value={r} className="capitalize">
+                                        {r}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                       <p className="text-xs text-muted-foreground">Requires authorization. Changes may need backend implementation.</p>
+                    </div>
+
+                     {/* Verification Status */}
+                    <div className="space-y-2 rounded-lg border p-4">
+                       <Label>Verification Status</Label>
+                       <div className="flex items-center gap-2 text-sm">
+                        {userData?.verified ? (
+                          <> <CheckCircle className="h-4 w-4 text-emerald-500" /> <span className="text-emerald-500">Verified</span> </>
+                        ) : (
+                          <> <AlertCircle className="h-4 w-4 text-amber-500" /> <span className="text-amber-500">Not Verified</span> </>
+                        )}
+                       </div>
+                    </div>
+
+               </CardContent>
+                <CardFooter>
+                    {/* Delete Account Button & Dialog */}
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="w-full cyber-button" disabled={!address || isDeleting}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete Account
+                        </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete your account
+                            and remove your data from our servers.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={handleDeleteAccount}
+                                disabled={isDeleting}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                                {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                {isDeleting ? 'Deleting...' : 'Yes, delete account'}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+               </CardFooter>
+             </Card>
+           </div>
+
+        </div> {/* End grid */}
+      </div> {/* End main flex container */}
     </DashboardLayout>
   );
 };
