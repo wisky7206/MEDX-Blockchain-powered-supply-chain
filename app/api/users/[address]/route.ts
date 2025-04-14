@@ -7,7 +7,7 @@ export async function GET(request: Request, { params }: { params: { address: str
     await dbConnect(); // <-- ADDED AWAIT
 
     // Access params.address here
-    const normalizedAddress = params.address.toLowerCase(); 
+    const normalizedAddress = params.address.toLowerCase();
 
     console.log(`Workspaceing user for address: ${normalizedAddress}`); // Optional log
 
