@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { toast } from "@/components/ui/use-toast"
 
 type Role = "provider" | "manufacturer" | "distributor" | "retailer"
 
@@ -51,7 +52,7 @@ function RoleCard({ title, description, icon, selected, onClick, color }: RoleCa
 }
 
 export default function RoleSelectionPage() {
-  const { isConnected, address, registerUser } = useWallet()
+  const { isConnected, address, registerUser, checkUserRegistration } = useWallet()
   const router = useRouter()
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
   const [isVisible, setIsVisible] = useState(false)
@@ -67,13 +68,32 @@ export default function RoleSelectionPage() {
     licenseNumber: "",
   })
 
+  // Check for existing user and handle redirects
   useEffect(() => {
-    setIsVisible(true)
+    const checkAndRedirect = async () => {
+      if (!isConnected) {
+        router.push("/auth")
+        return
+      }
 
-    if (!isConnected) {
-      router.push("/auth")
+      if (address) {
+        try {
+          const user = await checkUserRegistration(address)
+          if (user) {
+            // User exists, redirect to dashboard
+            router.push(`/dashboard/${user.role}`)
+            return
+          }
+          // Only show the role selection if user doesn't exist
+          setIsVisible(true)
+        } catch (error) {
+          console.error("Error checking user registration:", error)
+        }
+      }
     }
-  }, [isConnected, router])
+
+    checkAndRedirect()
+  }, [isConnected, address, router, checkUserRegistration])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -98,22 +118,29 @@ export default function RoleSelectionPage() {
     setIsLoading(true)
 
     try {
+      // Validate required fields
+      if (!formData.name || !formData.companyName || !formData.email) {
+        throw new Error("Please fill in all required fields")
+      }
+
       await registerUser({
         walletAddress: address,
         role: selectedRole,
         ...formData,
       })
-
-      // After successful registration, redirect to dashboard
-      router.push(`/dashboard/${selectedRole}`)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error registering user:", error)
-      alert("Failed to register user. Please try again.")
+      toast({
+        variant: "destructive",
+        title: "Registration Failed",
+        description: error.message || "Failed to register user. Please try again.",
+      })
       setIsLoading(false)
     }
   }
 
-  if (!isConnected) {
+  // Don't render anything if not connected or if user exists (will be redirected)
+  if (!isConnected || !isVisible) {
     return null
   }
 

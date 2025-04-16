@@ -2,64 +2,36 @@
 "use client"
 
 import React, { useState, useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form'; // Import useFieldArray
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import axios from 'axios';
-
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, PlusCircle, Trash2 } from 'lucide-react';
-
-// Define the structure for products and users fetched from your API
-interface Product {
-  _id: string; // Assuming MongoDB ObjectId string
-  productId: string;
-  name: string;
-}
+import { Plus, Minus, ShoppingCart } from "lucide-react";
+import axios from "axios";
 
 interface User {
-  _id: string; // Assuming MongoDB ObjectId string
+  _id: string;
   walletAddress: string;
   name: string;
-  companyName: string;
+  companyName?: string;
   role: string;
 }
 
-// Zod Schema for Form Validation
-const orderItemSchema = z.object({
-  productId: z.string().min(1, "Product selection is required."),
-  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1."),
-});
+interface InventoryItem {
+  _id: string;
+  name: string;
+  description: string;
+  quantity: number;
+  price: number;
+  category: string;
+  imageUrl?: string;
+}
 
-const formSchema = z.object({
-  otherPartyAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid wallet address"),
-  items: z.array(orderItemSchema).min(1, "At least one item is required."),
-  shippingAddress: z.string().optional(),
-});
+interface CartItem extends InventoryItem {
+  quantityInCart: number;
+}
 
-type OrderFormValues = z.infer<typeof formSchema>;
-
-// Component Props
 interface NewOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -75,265 +47,338 @@ export function NewOrderModal({
   currentUserRole,
   onOrderCreated,
 }: NewOrderModalProps) {
-  const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [step, setStep] = useState(1);
+  const [selectedRole, setSelectedRole] = useState("");
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
-  const form = useForm<OrderFormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      otherPartyAddress: '',
-      items: [{ productId: '', quantity: 1 }],
-      shippingAddress: '',
-    },
-  });
-
-  // --- CORRECTED: Use useFieldArray ---
-  const { fields, append, remove } = useFieldArray({
-      control: form.control,
-      name: "items"
-  });
-  // --- END CORRECTION ---
-
-  // Fetch Products and Users
+  // Fetch users when role is selected
   useEffect(() => {
-    if (isOpen) {
-       // Reset form when modal opens
-       form.reset({
-        otherPartyAddress: '',
-        items: [{ productId: '', quantity: 1 }],
-        shippingAddress: '',
-      });
-
-      // Fetch products
-      axios.get('/api/products')
-        .then(response => setProducts(response.data))
-        .catch(error => {
-          console.error("Failed to fetch products:", error);
-          toast({ variant: "destructive", title: "Error", description: "Could not load products." });
-        });
-
-      // Fetch users
-      axios.get('/api/users')
-        .then(response => {
-            const otherUsers = response.data.filter((user: User) =>
-                user.walletAddress.toLowerCase() !== currentUserAddress?.toLowerCase()
-            );
-            setUsers(otherUsers);
-        })
-        .catch(error => {
-          console.error("Failed to fetch users:", error);
-          toast({ variant: "destructive", title: "Error", description: "Could not load users." });
-        });
+    if (selectedRole) {
+      fetchUsersByRole(selectedRole);
     }
-  }, [isOpen, currentUserAddress, form, toast]);
+  }, [selectedRole]);
 
-  // Form Submission Handler
-  async function onSubmit(values: OrderFormValues) {
-    if (!currentUserAddress) {
-      toast({ variant: "destructive", title: "Error", description: "User address not found." });
-      return;
+  // Fetch inventory when user is selected
+  useEffect(() => {
+    if (selectedUser) {
+      fetchInventoryItems(selectedUser.walletAddress);
     }
-    setIsLoading(true);
+  }, [selectedUser]);
 
-    const buyerAddress = currentUserRole === 'retailer' || currentUserRole === 'distributor' || currentUserRole === 'manufacturer' ? currentUserAddress : values.otherPartyAddress;
-    const sellerAddress = currentUserRole === 'provider' || currentUserRole === 'manufacturer' || currentUserRole === 'distributor' ? currentUserAddress : values.otherPartyAddress;
-
-    if (buyerAddress.toLowerCase() === sellerAddress.toLowerCase()) {
-        toast({ variant: "destructive", title: "Error", description: "Buyer and Seller cannot be the same." });
-        setIsLoading(false);
-        return;
-    }
-
-    const orderPayload = {
-      buyerAddress: buyerAddress,
-      sellerAddress: sellerAddress,
-      items: values.items.map(item => ({
-          productId: item.productId, // Sends MongoDB _id
-          quantity: item.quantity,
-      })),
-      shippingAddress: values.shippingAddress || '',
-    };
-
+  const fetchUsersByRole = async (role: string) => {
     try {
-      const response = await axios.post('/api/orders', orderPayload);
-      toast({ title: "Success", description: `Order ${response.data.orderId} created successfully!` });
-      onOrderCreated();
-      onClose();
-    } catch (error: any) {
-      console.error("Error creating order:", error);
-      const errorMsg = error.response?.data?.error || error.message || "Failed to create order.";
-      toast({ variant: "destructive", title: "Error", description: errorMsg });
+      setLoading(true);
+      const response = await axios.get(`/api/users?role=${role}`);
+      if (response.data && Array.isArray(response.data)) {
+        setUsers(response.data);
+      } else {
+        setUsers([]);
+        toast({
+          title: "No users found",
+          description: `No ${role}s found in the system`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch users",
+        variant: "destructive",
+      });
+      setUsers([]);
     } finally {
-      setIsLoading(false);
-    }
-  }
-
-  // Helper functions for labels/roles
-  const getOtherPartyLabel = () => {
-    switch (currentUserRole) {
-        case 'retailer': return 'Distributor Address';
-        case 'distributor': return 'Manufacturer Address';
-        case 'manufacturer': return 'Provider Address';
-        case 'provider': return 'Manufacturer Address';
-        default: return 'Other Party Address';
+      setLoading(false);
     }
   };
 
-  const getOtherPartyRole = () => {
-      switch (currentUserRole) {
-          case 'retailer': return 'distributor';
-          case 'distributor': return 'manufacturer';
-          case 'manufacturer': return 'provider';
-          case 'provider': return 'manufacturer';
-          default: return '';
+  const fetchInventoryItems = async (address: string) => {
+    try {
+      setLoading(true);
+      console.log("Fetching inventory for address:", address);
+      const response = await axios.get(`/api/inventory/${address}`);
+      console.log("Raw inventory response:", response);
+      
+      if (response.status === 200) {
+        const data = response.data;
+        console.log("Inventory data:", data);
+        
+        if (Array.isArray(data)) {
+          setInventoryItems(data);
+          console.log("Set inventory items:", data);
+        } else {
+          console.error("Invalid response format:", data);
+          setInventoryItems([]);
+          toast({
+            title: "Error",
+            description: "Invalid inventory data format",
+            variant: "destructive",
+          });
+        }
       }
-  }
+    } catch (error) {
+      console.error("Error fetching inventory:", error);
+      setInventoryItems([]);
+      toast({
+        title: "Error",
+        description: "Failed to fetch inventory items. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filteredUsers = users.filter(user => user.role === getOtherPartyRole());
+  const addToCart = (item: InventoryItem) => {
+    setCart((prevCart) => {
+      const existingItem = prevCart.find((cartItem) => cartItem._id === item._id);
+      if (existingItem) {
+        if (existingItem.quantityInCart < item.quantity) {
+          return prevCart.map((cartItem) =>
+            cartItem._id === item._id
+              ? { ...cartItem, quantityInCart: cartItem.quantityInCart + 1 }
+              : cartItem
+          );
+        }
+        return prevCart;
+      }
+      return [...prevCart, { ...item, quantityInCart: 1 }];
+    });
+  };
 
-  if (!isOpen) return null;
+  const removeFromCart = (itemId: string) => {
+    setCart((prevCart) => {
+      const existingItem = prevCart.find((item) => item._id === itemId);
+      if (existingItem && existingItem.quantityInCart > 1) {
+        return prevCart.map((item) =>
+          item._id === itemId
+            ? { ...item, quantityInCart: item.quantityInCart - 1 }
+            : item
+        );
+      }
+      return prevCart.filter((item) => item._id !== itemId);
+    });
+  };
+
+  const getTotalAmount = () => {
+    return cart.reduce(
+      (total, item) => total + item.price * item.quantityInCart,
+      0
+    );
+  };
+
+  const handleCreateOrder = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.post("/api/orders", {
+        from: currentUserAddress,
+        to: selectedUser?.walletAddress,
+        items: cart.map((item) => ({
+          productId: item._id,
+          quantity: item.quantityInCart,
+        })),
+        totalAmount: getTotalAmount(),
+      });
+
+      if (response.status === 201) {
+        toast({
+          title: "Success",
+          description: "Order created successfully",
+        });
+        onOrderCreated();
+        onClose();
+      }
+    } catch (error) {
+      console.error("Error creating order:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create order",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Create New Order</DialogTitle>
-          <DialogDescription>
-            Fill in the details below to create a new order.
-          </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
-            {/* Select Other Party */}
-             <FormField
-              control={form.control}
-              name="otherPartyAddress"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{getOtherPartyLabel()}</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={`Select a ${getOtherPartyRole()}`} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {filteredUsers.length > 0 ? (
-                          filteredUsers.map((user) => (
-                            <SelectItem key={user._id} value={user.walletAddress}>
-                              {user.companyName} ({user.name}) - {user.walletAddress.substring(0, 6)}...
-                            </SelectItem>
-                          ))
-                      ) : (
-                          <SelectItem value="no-users" disabled>No available users found</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Order Items Section */}
-            <div className='space-y-4'>
-              <FormLabel>Order Items</FormLabel>
-              {fields.map((field, index) => ( // This should now work
-                <div key={field.id} className="flex items-end gap-2 border p-3 rounded-md relative">
-                   <FormField
-                    control={form.control}
-                    name={`items.${index}.productId`}
-                    render={({ field: itemField }) => (
-                      <FormItem className="flex-1">
-                        <FormLabel className="text-xs">Product</FormLabel>
-                         <Select onValueChange={itemField.onChange} defaultValue={itemField.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select product" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                             {products.length > 0 ? (
-                                products.map((product) => (
-                                <SelectItem key={product._id} value={product._id}> {/* Send MongoDB _id */}
-                                    {product.name} ({product.productId})
-                                </SelectItem>
-                                ))
-                             ) : (
-                                <SelectItem value="no-products" disabled>No products found</SelectItem>
-                             )}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.quantity`}
-                    render={({ field: itemField }) => (
-                      <FormItem className="w-24">
-                        <FormLabel className="text-xs">Quantity</FormLabel>
-                        <FormControl>
-                          <Input type="number" min="1" {...itemField} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    onClick={() => fields.length > 1 && remove(index)}
-                    disabled={fields.length <= 1}
-                    className='mb-1'
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-               <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => append({ productId: '', quantity: 1 })}
-                  className="mt-2"
+        <div className="grid gap-4 py-4">
+          {/* Step 1: Select Role */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="role">Select Role</Label>
+                <Select
+                  value={selectedRole}
+                  onValueChange={(value) => {
+                    setSelectedRole(value);
+                    setSelectedUser(null);
+                    setCart([]);
+                    setInventoryItems([]);
+                  }}
                 >
-                  <PlusCircle className="mr-2 h-4 w-4" /> Add Item
-                </Button>
-                 {form.formState.errors.items && typeof form.formState.errors.items !== 'object' && (
-                    <p className="text-sm font-medium text-destructive">{form.formState.errors.items.message}</p>
-                 )}
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="provider">Provider</SelectItem>
+                    <SelectItem value="manufacturer">Manufacturer</SelectItem>
+                    <SelectItem value="distributor">Distributor</SelectItem>
+                    <SelectItem value="retailer">Retailer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={() => setStep(2)}
+                disabled={!selectedRole}
+                className="w-full"
+              >
+                Next
+              </Button>
             </div>
+          )}
 
-            {/* Optional Shipping Address */}
-            <FormField
-              control={form.control}
-              name="shippingAddress"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Shipping Address (Optional)</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Enter shipping address" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+          {/* Step 2: Select User */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="user">Select {selectedRole}</Label>
+                <Select
+                  value={selectedUser?.walletAddress || ""}
+                  onValueChange={(value) => {
+                    const user = users.find((u) => u.walletAddress === value);
+                    if (user) {
+                      setSelectedUser(user);
+                      fetchInventoryItems(user.walletAddress);
+                    }
+                  }}
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={`Select a ${selectedRole}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user._id} value={user.walletAddress}>
+                        {user.name || user.companyName || user.walletAddress}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep(1)}
+                  className="flex-1"
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => setStep(3)}
+                  disabled={!selectedUser}
+                  className="flex-1"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Select Items */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Available Items</h3>
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  <span className="font-medium">
+                    Total: ${getTotalAmount().toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              {loading ? (
+                <div className="flex justify-center items-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                </div>
+              ) : inventoryItems.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No items available in inventory
+                </div>
+              ) : (
+                <div className="grid gap-4 max-h-[300px] overflow-y-auto">
+                  {inventoryItems.map((item) => (
+                    <div
+                      key={item._id}
+                      className="flex items-center justify-between p-4 border rounded-lg"
+                    >
+                      <div>
+                        <h4 className="font-medium">{item.name}</h4>
+                        <p className="text-sm text-gray-500">{item.description}</p>
+                        <p className="text-sm">
+                          Price: ${item.price} | Available: {item.quantity}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => removeFromCart(item._id)}
+                          disabled={
+                            !cart.find(
+                              (cartItem) => cartItem._id === item._id
+                            )?.quantityInCart
+                          }
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <span className="w-8 text-center">
+                          {cart.find((cartItem) => cartItem._id === item._id)
+                            ?.quantityInCart || 0}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => addToCart(item)}
+                          disabled={
+                            (cart.find((cartItem) => cartItem._id === item._id)?.quantityInCart || 0) >= item.quantity
+                          }
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
-            />
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Create Order
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep(2)}
+                  className="flex-1"
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={handleCreateOrder}
+                  disabled={cart.length === 0 || loading}
+                  className="flex-1"
+                >
+                  {loading ? "Creating..." : "Place Order"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

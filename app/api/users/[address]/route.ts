@@ -1,63 +1,119 @@
 import { NextResponse } from "next/server";
-import User from "../../../../models/User";
-import dbConnect from "../../../../lib/mongodb"; // <-- ADDED IMPORT
+import dbConnect from "@/lib/mongodb";
+import User, { IUser } from "@/models/User";
+import { Document } from "mongoose";
+
+// Cache for frequently accessed users
+const userCache = new Map<string, IUser>();
+
+// Helper function to normalize address
+const normalizeAddress = (address: string) => address.toLowerCase();
+
+// Helper function to clear cache
+const clearUserCache = (address: string) => {
+  userCache.delete(normalizeAddress(address));
+};
 
 export async function GET(request: Request, { params }: { params: { address: string } }) {
   try {
-    await dbConnect(); // <-- ADDED AWAIT
+    const normalizedAddress = normalizeAddress(params.address);
+    console.log(`Fetching user for address: ${normalizedAddress}`);
 
-    // Access params.address here
-    const normalizedAddress = params.address.toLowerCase();
-
-    console.log(`Workspaceing user for address: ${normalizedAddress}`); // Optional log
-
-    // Find the user by walletAddress
-    const user = await User.findOne({ walletAddress: normalizedAddress }).lean();
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    // Check cache first
+    const cachedUser = userCache.get(normalizedAddress);
+    if (cachedUser) {
+      return NextResponse.json(cachedUser, { status: 200 });
     }
 
-    return NextResponse.json(user, { status: 200 });
+    await dbConnect();
+    const user = await User.findOne({ walletAddress: normalizedAddress }).lean();
+
+    if (user) {
+      // Cache the user data
+      userCache.set(normalizedAddress, user as unknown as IUser);
+    }
+
+    return NextResponse.json(user || null, { status: 200 });
   } catch (error) {
-    // This will catch connection errors or findOne errors
     console.error("Error fetching user:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request, { params }: { params: { address: string } }) {
   try {
-     await dbConnect(); // <-- ADDED AWAIT
+    const normalizedAddress = normalizeAddress(params.address);
+    const updateData = await request.json();
 
-     const address = params.address; // Access params here is likely okay in PUT
-     const body = await request.json();
+    // Remove fields that shouldn't be updated
+    const { walletAddress, role, verified, ...allowedUpdates } = updateData;
 
-     // Check if body is properly formatted (optional validation)
-     if (!body || Object.keys(body).length === 0) {
-       return NextResponse.json({ error: "No data provided" }, { status: 400 });
-     }
+    await dbConnect();
+    const updatedUser = await User.findOneAndUpdate(
+      { walletAddress: normalizedAddress },
+      { $set: { ...allowedUpdates, updatedAt: new Date() } },
+      { new: true, runValidators: true }
+    ).lean();
 
-     // Fields that shouldn't be updated directly
-     const { walletAddress, role, verified, ...updateFields } = body;
+    if (!updatedUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
-     // Add the current timestamp for updatedAt
-     updateFields.updatedAt = new Date();
+    // Update cache
+    userCache.set(normalizedAddress, updatedUser as unknown as IUser);
 
-     // Update user data
-     const user = await User.findOneAndUpdate(
-       { walletAddress: address.toLowerCase() }, // Ensure case-insensitivity here too
-       { $set: updateFields },
-       { new: true, runValidators: true },
-     );
-
-     if (!user) {
-       return NextResponse.json({ error: "User not found" }, { status: 404 });
-     }
-
-     return NextResponse.json(user, { status: 200 });
+    return NextResponse.json(updatedUser, { status: 200 });
   } catch (error) {
-     console.error("Error updating user:", error);
-     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error("Error updating user:", error);
+    return NextResponse.json({ error: "Failed to update user" }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const userData = await request.json();
+    const normalizedAddress = normalizeAddress(userData.walletAddress);
+
+    await dbConnect();
+
+    // Check cache first
+    const cachedUser = userCache.get(normalizedAddress);
+    if (cachedUser) {
+      return NextResponse.json(
+        { error: "User with this wallet address already exists" },
+        { status: 409 }
+      );
+    }
+
+    const existingUser = await User.findOne({
+      walletAddress: normalizedAddress,
+    }).lean();
+
+    if (existingUser) {
+      // Cache the existing user
+      userCache.set(normalizedAddress, existingUser as unknown as IUser);
+      return NextResponse.json(
+        { error: "User with this wallet address already exists" },
+        { status: 409 }
+      );
+    }
+
+    const newUser = new User({
+      ...userData,
+      walletAddress: normalizedAddress,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const savedUser = await newUser.save();
+    const userObject = savedUser.toObject();
+
+    // Cache the new user
+    userCache.set(normalizedAddress, userObject as unknown as IUser);
+
+    return NextResponse.json(userObject, { status: 201 });
+  } catch (error) {
+    console.error("Error creating user:", error);
+    return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
   }
 }

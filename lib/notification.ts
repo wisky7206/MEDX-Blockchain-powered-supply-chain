@@ -2,25 +2,62 @@ import axios from "axios"
 import { io, type Socket } from "socket.io-client"
 
 let socket: Socket | null = null
+let reconnectAttempts = 0
+const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_DELAY = 1000 // 1 second
 
 // Initialize socket connection
 export const initSocketConnection = async () => {
   if (!socket) {
-    // First, ensure the socket server is running
-    await axios.get("/api/socket")
+    try {
+      // First, ensure the socket server is running
+      await axios.get("/api/socket")
 
-    // Then connect to it
-    socket = io({
-      path: "/api/socket",
-    })
+      // Then connect to it
+      socket = io({
+        path: "/api/socket",
+        reconnection: true,
+        reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+        reconnectionDelay: RECONNECT_DELAY,
+        timeout: 20000,
+        transports: ["websocket", "polling"],
+      })
 
-    socket.on("connect", () => {
-      console.log("Socket connected")
-    })
+      socket.on("connect", () => {
+        console.log("Socket connected")
+        reconnectAttempts = 0 // Reset reconnect attempts on successful connection
+      })
 
-    socket.on("disconnect", () => {
-      console.log("Socket disconnected")
-    })
+      socket.on("connect_error", (error) => {
+        console.error("Socket connection error:", error)
+      })
+
+      socket.on("disconnect", (reason) => {
+        console.log("Socket disconnected:", reason)
+        if (reason === "io server disconnect") {
+          // Server initiated disconnect, try to reconnect
+          socket?.connect()
+        }
+      })
+
+      socket.on("reconnect_attempt", (attemptNumber) => {
+        reconnectAttempts = attemptNumber
+        console.log(`Reconnection attempt ${attemptNumber}/${MAX_RECONNECT_ATTEMPTS}`)
+      })
+
+      socket.on("reconnect_failed", () => {
+        console.error("Failed to reconnect after maximum attempts")
+        socket = null
+      })
+
+      socket.on("error", (error) => {
+        console.error("Socket error:", error)
+      })
+    } catch (error) {
+      console.error("Error initializing socket connection:", error)
+      socket = null
+      throw error
+    }
   }
 
   return socket
@@ -39,9 +76,13 @@ export const joinUserRooms = async (address: string) => {
 // Leave rooms when logging out
 export const leaveAllRooms = async () => {
   if (socket) {
-    socket.emit("leaveAll")
-    socket.disconnect()
-    socket = null
+    try {
+      socket.emit("leaveAll")
+      socket.disconnect()
+      socket = null
+    } catch (error) {
+      console.error("Error leaving rooms:", error)
+    }
   }
 }
 
@@ -56,11 +97,19 @@ export const sendNotification = async (room: string, notification: any) => {
 
 // Listen for notifications
 export const listenForNotifications = async (callback: (notification: any) => void) => {
-  const socket = await initSocketConnection()
+  try {
+    const socket = await initSocketConnection()
+    if (!socket) {
+      throw new Error("Socket connection not available")
+    }
 
-  socket.on("notification", callback)
+    socket.on("notification", callback)
 
-  return () => {
-    socket?.off("notification", callback)
+    return () => {
+      socket?.off("notification", callback)
+    }
+  } catch (error) {
+    console.error("Error setting up notification listener:", error)
+    throw error
   }
 }

@@ -1,16 +1,27 @@
 import { NextResponse } from "next/server";
 import User from "../../../models/User";
-import dbConnect from "../../../lib/mongodb"; // <-- ADDED IMPORT
+import dbConnect from "../../../lib/mongodb";
+import { connectToDatabase } from "@/lib/mongodb";
+import { User as UserModel } from "@/models/User";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Optional: Add await dbConnect(); here if you need DB access in GET all
-    await dbConnect(); // <-- ADDED (if needed for GET all)
-    const users = await User.find({}).lean();
-    return NextResponse.json(users, { status: 200 });
+    const { searchParams } = new URL(request.url);
+    const role = searchParams.get("role");
+
+    await dbConnect();
+
+    // If role is provided, filter by role
+    const query = role ? { role } : {};
+    const users = await User.find(query).select("-password");
+
+    return NextResponse.json(users);
   } catch (error) {
     console.error("Error fetching users:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch users" },
+      { status: 500 }
+    );
   }
 }
 

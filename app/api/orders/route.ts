@@ -1,125 +1,182 @@
 import { NextResponse } from "next/server"
-import Order from "../../../models/Order"
+import { createOrder, getOrder } from "@/lib/contract"
+import Order from "@/models/Order"
+import dbConnect from "@/lib/mongodb"
 import User from "../../../models/User"
 import Product from "../../../models/Product"
+import Inventory from "../../../models/Inventory"
+import { ethers } from "ethers"
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const buyerAddress = searchParams.get("buyer")
-    const sellerAddress = searchParams.get("seller")
-    const status = searchParams.get("status")
-
-    const query: any = {}
-
-    if (buyerAddress) {
-      const buyer = await User.findOne({ walletAddress: { $regex: new RegExp(`^${buyerAddress}$`, "i") } })
-      if (buyer) {
-        query.buyer = buyer._id
-      }
-    }
-
-    if (sellerAddress) {
-      const seller = await User.findOne({ walletAddress: { $regex: new RegExp(`^${sellerAddress}$`, "i") } })
-      if (seller) {
-        query.seller = seller._id
-      }
-    }
-
-    if (status) {
-      query.status = status
-    }
-
-    const orders = await Order.find(query)
-      .populate("buyer", "walletAddress name companyName")
-      .populate("seller", "walletAddress name companyName")
-      .populate("items.product")
-      .lean()
-
-    return NextResponse.json(orders, { status: 200 })
-  } catch (error) {
-    console.error("Error fetching orders:", error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+// Add type declaration for window.ethereum
+declare global {
+  interface Window {
+    ethereum: any
   }
 }
 
-export async function POST(request: Request) {
+export async function GET(req: Request) {
   try {
-    const body = await request.json()
+    const { searchParams } = new URL(req.url)
+    const orderId = searchParams.get('orderId')
 
-    // Validate required fields
-    if (!body.buyerAddress || !body.sellerAddress || !body.items || body.items.length === 0) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
-    }
-
-    // Find buyer and seller
-    const buyer = await User.findOne({ walletAddress: { $regex: new RegExp(`^${body.buyerAddress}$`, "i") } })
-    const seller = await User.findOne({ walletAddress: { $regex: new RegExp(`^${body.sellerAddress}$`, "i") } })
-
-    if (!buyer || !seller) {
-      return NextResponse.json({ error: "Buyer or seller not found" }, { status: 404 })
-    }
-
-    // Process items and calculate total
-    const orderItems = []
-    let totalAmount = 0
-
-    for (const item of body.items) {
-      const product = await Product.findById(item.productId)
-      if (!product) {
-        return NextResponse.json({ error: `Product ${item.productId} not found` }, { status: 404 })
+    if (orderId) {
+      // Get single order
+      const blockchainOrder = await getOrder(parseInt(orderId))
+      if (!blockchainOrder) {
+        return NextResponse.json(
+          { success: false, error: "Order not found" },
+          { status: 404 }
+        )
       }
 
-      if (product.quantity < item.quantity) {
-        return NextResponse.json({ error: `Insufficient quantity for product ${product.name}` }, { status: 400 })
+      // Connect to database
+      await dbConnect()
+
+      // Get order from database
+      const dbOrder = await Order.findOne({ blockchainTxHash: blockchainOrder.id })
+      if (!dbOrder) {
+        return NextResponse.json(
+          { success: false, error: "Order not found in database" },
+          { status: 404 }
+        )
       }
 
-      // Update product quantity
-      product.quantity -= item.quantity
-      if (product.quantity <= 10) {
-        product.status = "Low Stock"
-      }
-      if (product.quantity <= 0) {
-        product.status = "Out of Stock"
-      }
-      await product.save()
-
-      orderItems.push({
-        product: product._id,
-        quantity: item.quantity,
-        price: product.price,
+      return NextResponse.json({
+        success: true,
+        order: {
+          ...dbOrder.toObject(),
+          blockchainData: blockchainOrder
+        }
       })
+    } else {
+      // Get all orders
+      await dbConnect()
+      const orders = await Order.find({})
+      return NextResponse.json({
+        success: true,
+        orders
+      })
+    }
+  } catch (error: any) {
+    console.error("Error fetching orders:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch orders" },
+      { status: 500 }
+    )
+  }
+}
 
-      totalAmount += product.price * item.quantity
+export async function POST(req: Request) {
+  try {
+    const { from, to, items, totalAmount } = await req.json()
+
+    if (!from || !to || !items || !totalAmount) {
+      return NextResponse.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      )
     }
 
-    // Generate a unique order ID
-    const lastOrder = await Order.findOne().sort({ createdAt: -1 })
-    const lastId = lastOrder ? Number.parseInt(lastOrder.orderId.split("-")[1]) : 0
-    const orderId = `ORD-${(lastId + 1).toString().padStart(3, "0")}`
+    // Connect to database
+    await dbConnect()
 
-    // Create new order
-    const order = new Order({
-      orderId,
-      buyer: buyer._id,
-      seller: seller._id,
-      items: orderItems,
-      totalAmount,
-      status: "Pending",
-      shippingAddress: body.shippingAddress || "",
+    // For now, we'll only handle the first item in the cart
+    const item = items[0]
+
+    // Get the product details
+    const product = await Product.findById(item.productId)
+    if (!product) {
+      return NextResponse.json(
+        { success: false, error: "Product not found" },
+        { status: 404 }
+      )
+    }
+
+    // Check if seller has enough inventory
+    const sellerInventory = await Inventory.findOne({
+      walletAddress: from,
+      "items.name": product.name
     })
 
-    await order.save()
+    if (!sellerInventory) {
+      return NextResponse.json(
+        { success: false, error: `Item ${product.name} not found in seller's inventory` },
+        { status: 404 }
+      )
+    }
 
-    // Populate order for response
-    const populatedOrder = await Order.findById(order._id)
-      .populate("buyer", "walletAddress name companyName")
-      .populate("seller", "walletAddress name companyName")
-      .populate("items.product")
+    const inventoryItem = sellerInventory.items.find((i: any) => i.name === product.name)
+    if (!inventoryItem || inventoryItem.quantity < item.quantity) {
+      return NextResponse.json(
+        { success: false, error: `Not enough quantity available for ${product.name}` },
+        { status: 400 }
+      )
+    }
 
-    return NextResponse.json(populatedOrder, { status: 201 })
-  } catch (error) {
+    // Create order on blockchain
+    const metadataURI = "ipfs://example-metadata-uri" // Replace with actual metadata URI
+    const orderId = `${from}-${Date.now()}`
+    
+    const blockchainResult = await createOrder(
+      orderId,
+      metadataURI,
+      totalAmount.toString()
+    )
+
+    if (!blockchainResult.success) {
+      throw new Error("Failed to create order on blockchain")
+    }
+
+    // Create order in database
+    const order = await Order.create({
+      sellerAddress: from,
+      buyerAddress: to,
+      itemName: product.name,
+      quantity: item.quantity,
+      price: product.price,
+      totalAmount: totalAmount,
+      status: "pending",
+      blockchainTxHash: blockchainResult.tx.hash
+    })
+
+    // Update seller's inventory
+    await Inventory.findOneAndUpdate(
+      { walletAddress: from, "items.name": product.name },
+      { $inc: { "items.$.quantity": -item.quantity } }
+    )
+
+    // Add item to buyer's inventory if not exists, or update quantity if exists
+    const buyerInventory = await Inventory.findOne({ walletAddress: to })
+    if (buyerInventory) {
+      const existingItem = buyerInventory.items.find((i: any) => i.name === product.name)
+      if (existingItem) {
+        await Inventory.findOneAndUpdate(
+          { walletAddress: to, "items.name": product.name },
+          { $inc: { "items.$.quantity": item.quantity } }
+        )
+      } else {
+        await Inventory.findOneAndUpdate(
+          { walletAddress: to },
+          { $push: { items: { name: product.name, quantity: item.quantity } } }
+        )
+      }
+    } else {
+      await Inventory.create({
+        walletAddress: to,
+        items: [{ name: product.name, quantity: item.quantity }]
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Order created successfully",
+      txHash: blockchainResult.tx.hash
+    }, { status: 201 })
+  } catch (error: any) {
     console.error("Error creating order:", error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    return NextResponse.json(
+      { success: false, error: error.message || "Failed to create order" },
+      { status: 500 }
+    )
   }
 }

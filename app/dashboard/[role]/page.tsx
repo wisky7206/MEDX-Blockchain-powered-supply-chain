@@ -22,21 +22,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { NewOrderModal } from "@/components/NewOrderModal"; // *** ADDED IMPORT ***
 import { useToast } from "@/components/ui/use-toast"; // *** ADDED IMPORT (ensure path is correct) ***
-
-// --- Mock function to get current user data (REPLACE WITH YOUR ACTUAL LOGIC) ---
-const getCurrentUserData = async () => {
-    // Replace this with your actual method to get the connected user's data
-    // Example: Fetch from /api/users/me or use a web3 hook, zustand store, context etc.
-    console.warn("Using placeholder user data. Replace getCurrentUserData() with actual implementation.");
-    await new Promise(resolve => setTimeout(resolve, 100)); // Simulate async fetch
-    // !!! IMPORTANT: Replace these hardcoded values !!!
-    return {
-        address: "0xFD6372fF6e51A8Ef9fF5798C56c9f9C331101767", // <-- REPLACE THIS EXAMPLE ADDRESS
-        role: "retailer" // <-- REPLACE THIS EXAMPLE ROLE (or get dynamically)
-    };
-    // In a real app, handle cases where the user might not be connected yet.
-};
-// --- End Mock Function ---
+import { useWallet } from "@/context/wallet-context"; // Add this import
 
 // 2. Update props interface (Unchanged from your version)
 interface DashboardPageProps {
@@ -50,38 +36,25 @@ export default function DashboardPage({ params }: DashboardPageProps) {
   const resolvedParams = use(params);
   // 4. Destructure 'role' from the resolved object (Unchanged from your version)
   const { role } = resolvedParams; // Role from URL params
+  const { address, role: userRole } = useWallet(); // Use the correct property names
 
   // --- EXISTING STATE (Unchanged) ---
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState("activity");
   // --- ADDED STATE ---
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
-  const [currentUserData, setCurrentUserData] = useState<{address: string | null; role: string | null}>({ address: null, role: null });
   const { toast } = useToast();
   // --- END ADDED STATE ---
 
    // --- MODIFIED useEffect ---
    useEffect(() => {
-        // Fetch current user data on mount - ADDED
-        getCurrentUserData().then(data => {
-            if (data.address && data.role) {
-                setCurrentUserData(data);
-            } else {
-                 toast({ variant: "destructive", title: "Error", description: "Could not load user data. Please connect your wallet." });
-            }
-        }).catch(err => {
-            console.error("Failed to get user data:", err);
-            toast({ variant: "destructive", title: "Error", description: "Could not load user data." });
-        });
-
-        // Simulate loading dashboard data (Existing)
+        // Simulate loading dashboard data
         const timer = setTimeout(() => {
             setIsLoaded(true);
         }, 500);
 
         return () => clearTimeout(timer);
-    // Added toast to dependency array
-    }, [toast]);
+    }, []);
     // --- END MODIFIED useEffect ---
 
     // --- ADDED CALLBACK FUNCTION ---
@@ -121,7 +94,7 @@ export default function DashboardPage({ params }: DashboardPageProps) {
     role === "provider" || role === "retailer" ? "primary" : role === "manufacturer" ? "secondary" : "accent";
 
   // --- Use the *actual* logged-in user's role for logic, fallback to URL role (Unchanged) ---
-  const actualUserRole = currentUserData?.role || role;
+  const actualUserRole = userRole || role;
 
   // --- Use URL role for display sections (Unchanged) ---
   const displayRole = role;
@@ -137,7 +110,7 @@ export default function DashboardPage({ params }: DashboardPageProps) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-sm text-muted-foreground mt-1">Welcome back to your MedX dashboard</p>
+            <p className="text-sm text-muted-foreground mt-1">Welcome back to your {actualUserRole} dashboard</p>
           </div>
           <div className="flex items-center gap-2">
             {/* Export Button (Unchanged) */}
@@ -150,7 +123,7 @@ export default function DashboardPage({ params }: DashboardPageProps) {
               size="sm"
               className="cyber-button"
               onClick={() => setIsNewOrderModalOpen(true)} // <-- ADDED onClick
-              disabled={!currentUserData?.address || !currentUserData?.role} // <-- ADDED disabled state
+              disabled={!address || !actualUserRole} // <-- ADDED disabled state
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -275,11 +248,11 @@ export default function DashboardPage({ params }: DashboardPageProps) {
 
        {/* ---- ADDED MODAL RENDER AT THE END (inside Layout, outside main flex container) ---- */}
        {/* Render only if user data is loaded */}
-       {actualUserRole && currentUserData?.address && (
+       {actualUserRole && address && (
             <NewOrderModal
                 isOpen={isNewOrderModalOpen}
                 onClose={() => setIsNewOrderModalOpen(false)}
-                currentUserAddress={currentUserData.address}
+                currentUserAddress={address}
                 currentUserRole={actualUserRole} // Pass the actual logged-in role
                 onOrderCreated={handleOrderCreated}
             />

@@ -1,10 +1,18 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { ethers } from "ethers"
 import axios from "axios"
+
+interface Window {
+  ethereum?: {
+    request: (args: { method: string }) => Promise<any>
+    on: (event: string, callback: (args: any) => void) => void
+    removeAllListeners: (event: string) => void
+  }
+}
 
 interface WalletContextType {
   isConnected: boolean
@@ -41,16 +49,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [balance, setBalance] = useState<string | null>(null)
   const [role, setRole] = useState<string | null>(null)
   const [userData, setUserData] = useState<any | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   const router = useRouter()
 
-  // Check if MetaMask is installed
-  const isMetaMaskInstalled = () => {
+  // Memoize MetaMask check
+  const isMetaMaskInstalled = useCallback(() => {
     return typeof window !== "undefined" && window.ethereum !== undefined
-  }
+  }, [])
 
-  // Get account balance
-  const getBalance = async (address: string) => {
+  // Memoize balance fetching
+  const getBalance = useCallback(async (address: string) => {
     if (!isMetaMaskInstalled()) return null
 
     try {
@@ -61,13 +70,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       console.error("Error getting balance:", error)
       return null
     }
-  }
+  }, [isMetaMaskInstalled])
 
-  // Check if user is registered in the database
-  const checkUserRegistration = async (address: string) => {
+  // Memoize user registration check
+  const checkUserRegistration = useCallback(async (address: string) => {
     try {
       const response = await axios.get(`/api/users/${address}`)
       if (response.status === 200 && response.data) {
+        setRole(response.data.role)
+        setUserData(response.data)
         return response.data
       }
       return null
@@ -75,210 +86,171 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       console.error("Error checking user registration:", error)
       return null
     }
-  }
+  }, [])
 
-  // Register a new user in the database
-  const registerUser = async (userData: any) => {
+  // Memoize user registration
+  const registerUser = useCallback(async (userData: any) => {
     try {
+      const existingUser = await checkUserRegistration(userData.walletAddress)
+      if (existingUser) {
+        router.push(`/dashboard/${existingUser.role}`)
+        return
+      }
+
       const response = await axios.post("/api/users", userData)
       if (response.status === 201) {
         setUserData(response.data)
         setRole(response.data.role)
-        localStorage.setItem("userRole", response.data.role)
+        router.push(`/dashboard/${response.data.role}`)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error registering user:", error)
-      throw error
+      if (error.response?.status === 409) {
+        const existingUser = await checkUserRegistration(userData.walletAddress)
+        if (existingUser) {
+          router.push(`/dashboard/${existingUser.role}`)
+          return
+        }
+        throw new Error("User with this wallet address already exists")
+      }
+      throw new Error(error.response?.data?.error || "Failed to register user")
     }
-  }
+  }, [checkUserRegistration, router])
 
-  // Connect to MetaMask
-  const connect = async () => {
+  // Memoize connection function
+  const connect = useCallback(async () => {
     if (!isMetaMaskInstalled()) {
       alert("MetaMask is not installed. Please install MetaMask to use this application.")
       return
     }
 
     try {
-      // Request account access
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" })
-
       if (accounts.length > 0) {
         const currentAddress = accounts[0]
         setAddress(currentAddress)
         setIsConnected(true)
 
-        // Get chain ID
-        const chainId = await window.ethereum.request({ method: "eth_chainId" })
+        // Parallel requests for better performance
+        const [chainId, balance] = await Promise.all([
+          window.ethereum.request({ method: "eth_chainId" }),
+          getBalance(currentAddress)
+        ])
         setChainId(chainId)
-
-        // Get balance
-        const balance = await getBalance(currentAddress)
         setBalance(balance)
 
-        // Check if user exists in database
         const user = await checkUserRegistration(currentAddress)
-
         if (user) {
-          // User exists, set role and store in localStorage
-          setRole(user.role)
-          setUserData(user)
-          localStorage.setItem("userRole", user.role)
-
-          // Redirect to dashboard if not on role selection page
-          if (window.location.pathname === "/auth") {
-            router.push(`/dashboard/${user.role}`)
-          }
+          router.push(`/dashboard/${user.role}`)
         } else {
-          // User doesn't exist, send to role selection
           router.push("/auth/role")
         }
-
-        // Store connection state in localStorage
-        localStorage.setItem("walletConnected", "true")
-        localStorage.setItem("walletAddress", currentAddress)
       }
     } catch (error) {
       console.error("Error connecting to MetaMask:", error)
     }
-  }
+  }, [isMetaMaskInstalled, getBalance, checkUserRegistration, router])
 
-  // Disconnect from MetaMask
-  const disconnect = () => {
+  // Memoize disconnect function
+  const disconnect = useCallback(() => {
     setIsConnected(false)
     setAddress(null)
     setChainId(null)
     setBalance(null)
     setRole(null)
     setUserData(null)
-
-    // Clear connection state from localStorage
-    localStorage.removeItem("walletConnected")
-    localStorage.removeItem("walletAddress")
-    localStorage.removeItem("userRole")
-
-    // Redirect to home
     router.push("/")
-  }
+  }, [router])
 
-  // Check for existing connection on component mount
+  // Optimize initial connection check
   useEffect(() => {
     const checkConnection = async () => {
       if (isMetaMaskInstalled()) {
-        const isWalletConnected = localStorage.getItem("walletConnected") === "true"
-        const storedAddress = localStorage.getItem("walletAddress")
-        const storedRole = localStorage.getItem("userRole")
-
-        if (isWalletConnected && storedAddress) {
-          // Verify the connection is still valid
-          try {
-            const accounts = await window.ethereum.request({ method: "eth_accounts" })
-            if (accounts.length > 0 && accounts[0] === storedAddress) {
-              setAddress(accounts[0])
-              setIsConnected(true)
-
-              // Get chain ID
-              const chainId = await window.ethereum.request({ method: "eth_chainId" })
-              setChainId(chainId)
-
-              // Get balance
-              const balance = await getBalance(accounts[0])
-              setBalance(balance)
-
-              // Restore role from localStorage or fetch from database
-              if (storedRole) {
-                setRole(storedRole)
-
-                // Fetch complete user data
-                const user = await checkUserRegistration(accounts[0])
-                if (user) {
-                  setUserData(user)
-                }
-              } else {
-                // Fetch user info from database
-                const user = await checkUserRegistration(accounts[0])
-                if (user) {
-                  setRole(user.role)
-                  setUserData(user)
-                  localStorage.setItem("userRole", user.role)
-                }
-              }
-            } else {
-              // Clear invalid connection state
-              disconnect()
-            }
-          } catch (error) {
-            console.error("Error checking connection:", error)
-            disconnect()
-          }
-        }
-
-        // Listen for account changes
-        window.ethereum.on("accountsChanged", (accounts: string[]) => {
-          if (accounts.length === 0) {
-            disconnect()
-          } else {
+        try {
+          const accounts = await window.ethereum.request({ method: "eth_accounts" })
+          if (accounts.length > 0) {
             setAddress(accounts[0])
-            localStorage.setItem("walletAddress", accounts[0])
+            setIsConnected(true)
 
-            // Check if the new account is registered
-            checkUserRegistration(accounts[0]).then((user) => {
-              if (user) {
-                setRole(user.role)
-                setUserData(user)
-                localStorage.setItem("userRole", user.role)
+            // Parallel requests for better performance
+            const [chainId, balance] = await Promise.all([
+              window.ethereum.request({ method: "eth_chainId" }),
+              getBalance(accounts[0])
+            ])
+            setChainId(chainId)
+            setBalance(balance)
 
-                // Redirect to dashboard
-                router.push(`/dashboard/${user.role}`)
-              } else {
-                // New account not registered, send to role selection
-                setRole(null)
-                setUserData(null)
-                localStorage.removeItem("userRole")
-                router.push("/auth/role")
-              }
-            })
+            const user = await checkUserRegistration(accounts[0])
+            if (user) {
+              router.push(`/dashboard/${user.role}`)
+            }
           }
-        })
-
-        // Listen for chain changes
-        window.ethereum.on("chainChanged", (chainId: string) => {
-          setChainId(chainId)
-
-          // Update balance on chain change
-          if (address) {
-            getBalance(address).then((balance) => setBalance(balance))
-          }
-        })
+        } catch (error) {
+          console.error("Error checking connection:", error)
+        } finally {
+          setIsLoading(false)
+        }
+      } else {
+        setIsLoading(false)
       }
     }
 
     checkConnection()
 
-    // Clean up event listeners
+    // Memoize event handlers
+    const handleAccountsChanged = async (accounts: string[]) => {
+      if (accounts.length === 0) {
+        disconnect()
+      } else {
+        setAddress(accounts[0])
+        setIsConnected(true)
+        const user = await checkUserRegistration(accounts[0])
+        if (user) {
+          router.push(`/dashboard/${user.role}`)
+        }
+      }
+    }
+
+    const handleChainChanged = (chainId: string) => {
+      setChainId(chainId)
+      if (address) {
+        getBalance(address).then((balance) => setBalance(balance))
+      }
+    }
+
+    if (isMetaMaskInstalled()) {
+      window.ethereum.on("accountsChanged", handleAccountsChanged)
+      window.ethereum.on("chainChanged", handleChainChanged)
+    }
+
     return () => {
       if (isMetaMaskInstalled()) {
         window.ethereum.removeAllListeners("accountsChanged")
         window.ethereum.removeAllListeners("chainChanged")
       }
     }
-  }, [router])
+  }, [isMetaMaskInstalled, getBalance, checkUserRegistration, disconnect, router, address])
+
+  // Memoize context value
+  const contextValue = useMemo(() => ({
+    isConnected,
+    address,
+    chainId,
+    balance,
+    role,
+    userData,
+    connect,
+    disconnect,
+    checkUserRegistration,
+    registerUser,
+  }), [isConnected, address, chainId, balance, role, userData, connect, disconnect, checkUserRegistration, registerUser])
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
+  }
 
   return (
-    <WalletContext.Provider
-      value={{
-        isConnected,
-        address,
-        chainId,
-        balance,
-        role,
-        userData,
-        connect,
-        disconnect,
-        checkUserRegistration,
-        registerUser,
-      }}
-    >
+    <WalletContext.Provider value={contextValue}>
       {children}
     </WalletContext.Provider>
   )

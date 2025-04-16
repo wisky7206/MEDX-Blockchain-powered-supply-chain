@@ -2,13 +2,15 @@
 
 // 1. Import 'use' from React
 import React, { useEffect, useState, use } from "react";
+import { useWallet } from "@/context/wallet-context";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import DashboardLayout from "@/components/dashboard-layout"; // Assuming this component exists
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Removed TabsContent as it wasn't used directly here
-import { AlertCircle, ArrowUpDown, Box, CheckCircle2, Filter, Package, Plus, Search } from "lucide-react";
+import { AlertCircle, ArrowUpDown, Box, CheckCircle2, Filter, Package, Plus, Search, X } from "lucide-react";
+import axios from "axios";
 
 // 2. Update props interface to indicate params is a Promise
 interface InventoryPageProps {
@@ -17,86 +19,261 @@ interface InventoryPageProps {
   }>;
 }
 
+interface InventoryItem {
+  _id: string;
+  name: string;
+  description: string;
+  quantity: number;
+  price: number;
+  category: string;
+  imageUrl?: string;
+}
+
 export default function InventoryPage({ params }: InventoryPageProps) {
   // 3. Unwrap the params Promise *before* accessing its properties
   const resolvedParams = use(params);
   // 4. Destructure 'role' from the resolved object
   const { role } = resolvedParams;
+  const { address } = useWallet();
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [alert, setAlert] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [newItem, setNewItem] = useState({
+    name: "",
+    description: "",
+    quantity: "",
+    price: "",
+    category: "",
+    imageUrl: ""
+  });
 
   useEffect(() => {
-    // Simulate loading data
-    const timer = setTimeout(() => {
-      setIsLoaded(true);
-    }, 500);
+    const fetchInventory = async () => {
+      if (!address) {
+        setError("Wallet not connected");
+        setIsLoaded(true);
+        return;
+      }
 
-    return () => clearTimeout(timer);
-  }, []);
+      try {
+        setIsLoaded(false);
+        setError(null);
+        const response = await axios.get(`/api/inventory/${address}`);
+        
+        // The API returns an array directly
+        if (Array.isArray(response.data)) {
+          setInventoryItems(response.data);
+        } else {
+          setError("Invalid response format from server");
+        }
+      } catch (error: any) {
+        console.error("Error fetching inventory:", error);
+        setError(error.response?.data?.error || "Failed to fetch inventory items. Please try again later.");
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+
+    fetchInventory();
+  }, [address]);
 
   // Role-specific inventory data (remains the same)
-  const inventoryItems = {
-     provider: [
-       { id: "RM-2023", name: "Acetylsalicylic Acid", category: "Active Ingredient", quantity: 500, unit: "kg", status: "In Stock", expiry: "2025-06-30" },
-       { id: "RM-2024", name: "Microcrystalline Cellulose", category: "Excipient", quantity: 1200, unit: "kg", status: "In Stock", expiry: "2026-03-15" },
-       { id: "RM-2025", name: "Magnesium Stearate", category: "Excipient", quantity: 300, unit: "kg", status: "Low Stock", expiry: "2025-09-22" },
-       { id: "RM-2026", name: "Paracetamol", category: "Active Ingredient", quantity: 750, unit: "kg", status: "In Stock", expiry: "2024-12-10" },
-       { id: "RM-2027", name: "Starch", category: "Excipient", quantity: 850, unit: "kg", status: "In Stock", expiry: "2025-08-05" },
-    ],
-    manufacturer: [
-       { id: "PRD-101", name: "Aspirin 100mg", category: "Analgesic", quantity: 10000, unit: "tablets", status: "In Stock", expiry: "2025-04-15" },
-       { id: "PRD-102", name: "Paracetamol 500mg", category: "Analgesic", quantity: 15000, unit: "tablets", status: "In Stock", expiry: "2024-11-20" },
-       { id: "PRD-103", name: "Amoxicillin 250mg", category: "Antibiotic", quantity: 5000, unit: "capsules", status: "Low Stock", expiry: "2024-08-30" },
-       { id: "PRD-104", name: "Ibuprofen 400mg", category: "NSAID", quantity: 8000, unit: "tablets", status: "In Stock", expiry: "2025-02-28" },
-       { id: "PRD-105", name: "Loratadine 10mg", category: "Antihistamine", quantity: 6000, unit: "tablets", status: "In Stock", expiry: "2025-05-10" },
-    ],
-    distributor: [
-        { id: "PRD-101", name: "Aspirin 100mg", category: "Analgesic", quantity: 5000, unit: "boxes", status: "In Stock", expiry: "2025-04-15" },
-        { id: "PRD-102", name: "Paracetamol 500mg", category: "Analgesic", quantity: 7500, unit: "boxes", status: "In Stock", expiry: "2024-11-20" },
-        { id: "PRD-103", name: "Amoxicillin 250mg", category: "Antibiotic", quantity: 1200, unit: "boxes", status: "Low Stock", expiry: "2024-08-30" },
-        { id: "PRD-104", name: "Ibuprofen 400mg", category: "NSAID", quantity: 3000, unit: "boxes", status: "In Stock", expiry: "2025-02-28" },
-        { id: "PRD-105", name: "Loratadine 10mg", category: "Antihistamine", quantity: 2500, unit: "boxes", status: "In Stock", expiry: "2025-05-10" },
-    ],
-    retailer: [
-       { id: "PRD-101", name: "Aspirin 100mg", category: "Analgesic", quantity: 200, unit: "boxes", status: "In Stock", expiry: "2025-04-15" },
-       { id: "PRD-102", name: "Paracetamol 500mg", category: "Analgesic", quantity: 350, unit: "boxes", status: "In Stock", expiry: "2024-11-20" },
-       { id: "PRD-103", name: "Amoxicillin 250mg", category: "Antibiotic", quantity: 50, unit: "boxes", status: "Low Stock", expiry: "2024-08-30" },
-       { id: "PRD-104", name: "Ibuprofen 400mg", category: "NSAID", quantity: 180, unit: "boxes", status: "In Stock", expiry: "2025-02-28" },
-       { id: "PRD-105", name: "Loratadine 10mg", category: "Antihistamine", quantity: 120, unit: "boxes", status: "In Stock", expiry: "2025-05-10" },
-    ],
-  };
-
-  // Use the 'role' variable which is now correctly obtained
   const roleColor =
     role === "provider" || role === "retailer" ? "primary" : role === "manufacturer" ? "secondary" : "accent";
 
   // Filtered items based on search and active tab
-  const filteredItems = inventoryItems[role]
-    .filter((item) => activeTab === "all" || item.status === "Low Stock")
+  const filteredItems = inventoryItems
+    .filter((item) => activeTab === "all" || item.quantity < 10)
     .filter(
       (item) =>
         searchQuery === "" ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.id.toLowerCase().includes(searchQuery.toLowerCase())
+        item._id.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+  const handleAddItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!address) {
+      setAlert({ type: 'error', message: "Wallet not connected" });
+      return;
+    }
+
+    try {
+      const response = await axios.post("/api/inventory", {
+        ...newItem,
+        walletAddress: address,
+        quantity: Number(newItem.quantity),
+        price: Number(newItem.price)
+      });
+
+      if (response.status === 201) {
+        setInventoryItems([...inventoryItems, response.data]);
+        setNewItem({
+          name: "",
+          description: "",
+          quantity: "",
+          price: "",
+          category: "",
+          imageUrl: ""
+        });
+        setIsAddingItem(false);
+        setAlert({ type: 'success', message: "Item added successfully" });
+      }
+    } catch (error: any) {
+      console.error("Error adding item:", error);
+      setAlert({ type: 'error', message: error.response?.data?.error || "Failed to add item" });
+    }
+  };
+
+  // Auto-dismiss alert after 5 seconds
+  useEffect(() => {
+    if (alert) {
+      const timer = setTimeout(() => {
+        setAlert(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
+
+  if (error) {
+    return (
+      <DashboardLayout role={role}>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Error</h2>
+            <p className="text-muted-foreground">{error}</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role={role}>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Inventory Management</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage and track your inventory items</p>
+      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        {/* Alert Message */}
+        {alert && (
+          <div className={`p-4 rounded-lg ${
+            alert.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                {alert.type === 'success' ? (
+                  <CheckCircle2 className="h-5 w-5 mr-2" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 mr-2" />
+                )}
+                <span>{alert.message}</span>
+              </div>
+              <button
+                onClick={() => setAlert(null)}
+                className="ml-4 text-current hover:text-current/80"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" className="cyber-button">
+        )}
+
+        <div className="flex items-center justify-between space-y-2">
+          <h2 className="text-3xl font-bold tracking-tight">Inventory Management</h2>
+          <div className="flex items-center space-x-2">
+            <Button onClick={() => setIsAddingItem(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Item
             </Button>
           </div>
         </div>
+
+        {/* Add Item Modal */}
+        {isAddingItem && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md">
+              <CardHeader>
+                <CardTitle>Add New Item</CardTitle>
+                <CardDescription>Enter the details of the new inventory item</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleAddItem} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Name</label>
+                    <Input
+                      required
+                      value={newItem.name}
+                      onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                      placeholder="Enter item name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Description</label>
+                    <Input
+                      required
+                      value={newItem.description}
+                      onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                      placeholder="Enter item description"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Quantity</label>
+                    <Input
+                      required
+                      type="number"
+                      min="0"
+                      value={newItem.quantity}
+                      onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
+                      placeholder="Enter quantity"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Price</label>
+                    <Input
+                      required
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newItem.price}
+                      onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
+                      placeholder="Enter price"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Category</label>
+                    <Input
+                      required
+                      value={newItem.category}
+                      onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                      placeholder="Enter category"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Image URL (Optional)</label>
+                    <Input
+                      value={newItem.imageUrl}
+                      onChange={(e) => setNewItem({ ...newItem, imageUrl: e.target.value })}
+                      placeholder="Enter image URL"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsAddingItem(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit">Add Item</Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <div className="flex flex-col gap-4 md:flex-row md:items-center">
           <div className="relative flex-1">
@@ -176,48 +353,44 @@ export default function InventoryPage({ params }: InventoryPageProps) {
                           <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
                         </div>
                       </th>
+                      <th className="px-4 py-3 text-left font-medium">Price</th>
                       <th className="px-4 py-3 text-left font-medium">Status</th>
-                      <th className="px-4 py-3 text-left font-medium">Expiry Date</th>
                       <th className="px-4 py-3 text-left font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredItems.map((item, index) => ( // Use the filteredItems array
+                    {filteredItems.map((item, index) => (
                       <tr
-                        key={item.id}
+                        key={item._id}
                         className={`border-b border-border/50 transition-all duration-500 ${
                           isLoaded ? "opacity-100" : "opacity-0"
                         }`}
                         style={{ transitionDelay: `${index * 50}ms` }}
                       >
-                        <td className="px-4 py-3 font-medium">{item.id}</td>
+                        <td className="px-4 py-3 font-medium">{item._id}</td>
                         <td className="px-4 py-3">{item.name}</td>
                         <td className="px-4 py-3">{item.category}</td>
-                        <td className="px-4 py-3">
-                          {item.quantity} {item.unit}
-                        </td>
+                        <td className="px-4 py-3">{item.quantity}</td>
+                        <td className="px-4 py-3">${item.price}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center">
-                            {item.status === "In Stock" ? (
-                              <CheckCircle2 className={`mr-2 h-4 w-4 text-${roleColor}`} />
+                            {item.quantity < 10 ? (
+                              <>
+                                <AlertCircle className="h-4 w-4 text-yellow-500 mr-1" />
+                                <span className="text-yellow-500">Low Stock</span>
+                              </>
                             ) : (
-                              <AlertCircle className="mr-2 h-4 w-4 text-amber-500" />
+                              <>
+                                <CheckCircle2 className="h-4 w-4 text-green-500 mr-1" />
+                                <span className="text-green-500">In Stock</span>
+                              </>
                             )}
-                            <span className={item.status === "In Stock" ? `text-${roleColor}` : "text-amber-500"}>
-                              {item.status}
-                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">{item.expiry}</td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Package className="h-4 w-4" /> {/* Icon for details? */}
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Search className="h-4 w-4" /> {/* Icon for track? */}
-                            </Button>
-                          </div>
+                          <Button variant="ghost" size="sm">
+                            Edit
+                          </Button>
                         </td>
                       </tr>
                     ))}
