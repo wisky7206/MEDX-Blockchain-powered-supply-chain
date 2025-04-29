@@ -35,7 +35,7 @@ import {
 
 // Props interface remains the same
 interface SettingsPageProps {
-  params: Promise<{ role: "provider" | "manufacturer" | "distributor" | "retailer" }>;
+  params: { role: "provider" | "manufacturer" | "distributor" | "retailer" };
 }
 
 // Define available roles for selection
@@ -44,9 +44,8 @@ const availableRoles: Array<"provider" | "manufacturer" | "distributor" | "retai
 ];
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ params }) => {
-  const resolvedParams = use(params);
   // Get the role from the URL params, primarily for layout/display consistency if needed
-  const urlRole = resolvedParams.role;
+  const urlRole = params.role;
 
   const { address, userData, disconnectWallet /* Assume disconnect exists */ } = useWallet(); // Add disconnectWallet if available
   const { theme, setTheme } = useTheme(); // Hook for dark mode

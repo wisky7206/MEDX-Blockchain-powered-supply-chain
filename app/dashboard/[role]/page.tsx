@@ -24,18 +24,16 @@ import { NewOrderModal } from "@/components/NewOrderModal"; // *** ADDED IMPORT 
 import { useToast } from "@/components/ui/use-toast"; // *** ADDED IMPORT (ensure path is correct) ***
 import { useWallet } from "@/context/wallet-context"; // Add this import
 
-// 2. Update props interface (Unchanged from your version)
+// 2. Update props interface
 interface DashboardPageProps {
-  params: Promise<{
+  params: {
     role: "provider" | "manufacturer" | "distributor" | "retailer";
-  }>;
+  };
 }
 
 export default function DashboardPage({ params }: DashboardPageProps) {
-  // 3. Unwrap the params Promise (Unchanged from your version)
-  const resolvedParams = use(params);
-  // 4. Destructure 'role' from the resolved object (Unchanged from your version)
-  const { role } = resolvedParams; // Role from URL params
+  // 3. Destructure 'role' directly from params
+  const { role } = params; // Role from URL params
   const { address, role: userRole } = useWallet(); // Use the correct property names
 
   // --- EXISTING STATE (Unchanged) ---

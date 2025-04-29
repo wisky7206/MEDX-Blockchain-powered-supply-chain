@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import dbConnect from "@/lib/mongodb";
-import User, { IUser } from "@/models/User";
-import { Document } from "mongoose";
+import clientPromise from "@/lib/mongodb";
+import { User } from "@/lib/models/User";
+import { ObjectId } from "mongodb";
 
 // Cache for frequently accessed users
-const userCache = new Map<string, IUser>();
+const userCache = new Map<string, User>();
 
 // Helper function to normalize address
 const normalizeAddress = (address: string) => address.toLowerCase();
@@ -16,56 +16,91 @@ const clearUserCache = (address: string) => {
 
 export async function GET(request: Request, { params }: { params: { address: string } }) {
   try {
-    const normalizedAddress = normalizeAddress(params.address);
-    console.log(`Fetching user for address: ${normalizedAddress}`);
+    const client = await clientPromise;
+    const db = client.db("medx");
+    const user = await db.collection<User>("users").findOne({ address: params.address });
 
-    // Check cache first
-    const cachedUser = userCache.get(normalizedAddress);
-    if (cachedUser) {
-      return NextResponse.json(cachedUser, { status: 200 });
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      );
     }
 
-    await dbConnect();
-    const user = await User.findOne({ walletAddress: normalizedAddress }).lean();
-
-    if (user) {
-      // Cache the user data
-      userCache.set(normalizedAddress, user as unknown as IUser);
-    }
-
-    return NextResponse.json(user || null, { status: 200 });
+    return NextResponse.json(user);
   } catch (error) {
-    console.error("Error fetching user:", error);
-    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 });
+    console.error('Database error:', error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(request: Request, { params }: { params: { address: string } }) {
   try {
-    const normalizedAddress = normalizeAddress(params.address);
-    const updateData = await request.json();
+    const body = await request.json();
+    const updateData = {
+      ...body,
+      updatedAt: new Date(),
+    };
 
-    // Remove fields that shouldn't be updated
-    const { walletAddress, role, verified, ...allowedUpdates } = updateData;
+    delete updateData._id; // Remove _id if present to avoid MongoDB errors
 
-    await dbConnect();
-    const updatedUser = await User.findOneAndUpdate(
-      { walletAddress: normalizedAddress },
-      { $set: { ...allowedUpdates, updatedAt: new Date() } },
-      { new: true, runValidators: true }
-    ).lean();
+    const client = await clientPromise;
+    const db = client.db("medx");
+    
+    const result = await db.collection<User>("users").updateOne(
+      { address: params.address },
+      { 
+        $set: updateData,
+        $setOnInsert: { createdAt: new Date() }
+      },
+      { upsert: true }
+    );
 
-    if (!updatedUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (result.matchedCount === 0 && !result.upsertedId) {
+      return NextResponse.json(
+        { error: "Failed to update user" },
+        { status: 400 }
+      );
     }
 
-    // Update cache
-    userCache.set(normalizedAddress, updatedUser as unknown as IUser);
-
-    return NextResponse.json(updatedUser, { status: 200 });
+    const updatedUser = await db.collection<User>("users").findOne({ address: params.address });
+    return NextResponse.json(updatedUser);
   } catch (error) {
-    console.error("Error updating user:", error);
-    return NextResponse.json({ error: "Failed to update user" }, { status: 500 });
+    console.error('Database error:', error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { address: string } }
+) {
+  try {
+    const client = await clientPromise;
+    const db = client.db("medx");
+    
+    const result = await db.collection<User>("users").deleteOne({ address: params.address });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error('Database error:', error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -74,7 +109,7 @@ export async function POST(request: Request) {
     const userData = await request.json();
     const normalizedAddress = normalizeAddress(userData.walletAddress);
 
-    await dbConnect();
+    await clientPromise;
 
     // Check cache first
     const cachedUser = userCache.get(normalizedAddress);
@@ -85,13 +120,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingUser = await User.findOne({
-      walletAddress: normalizedAddress,
-    }).lean();
+    const existingUser = await clientPromise.then(client => client.db("medx").collection<User>("users").findOne({ address: normalizedAddress }));
 
     if (existingUser) {
       // Cache the existing user
-      userCache.set(normalizedAddress, existingUser as unknown as IUser);
+      userCache.set(normalizedAddress, existingUser as unknown as User);
       return NextResponse.json(
         { error: "User with this wallet address already exists" },
         { status: 409 }
@@ -100,16 +133,17 @@ export async function POST(request: Request) {
 
     const newUser = new User({
       ...userData,
-      walletAddress: normalizedAddress,
+      address: normalizedAddress,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
 
-    const savedUser = await newUser.save();
+    const result = await clientPromise.then(client => client.db("medx").collection<User>("users").insertOne(newUser));
+    const savedUser = await clientPromise.then(client => client.db("medx").collection<User>("users").findOne({ _id: result.insertedId }));
     const userObject = savedUser.toObject();
 
     // Cache the new user
-    userCache.set(normalizedAddress, userObject as unknown as IUser);
+    userCache.set(normalizedAddress, userObject as unknown as User);
 
     return NextResponse.json(userObject, { status: 201 });
   } catch (error) {

@@ -14,18 +14,16 @@ import { CheckCircle2, Clock, Package, QrCode, Search, Truck } from "lucide-reac
 import Link from "next/link"; // Added missing import
 import { QRScanner } from "@/components/qr-scanner"; // Assuming this component exists and path is correct
 
-// 2. Update props interface to indicate params is a Promise
+// 2. Update props interface
 interface TrackingPageProps {
-  params: Promise<{
+  params: {
     role: "provider" | "manufacturer" | "distributor" | "retailer";
-  }>;
+  };
 }
 
 export default function TrackingPage({ params }: TrackingPageProps) {
-  // 3. Unwrap the params Promise *before* accessing its properties
-  const resolvedParams = use(params);
-  // 4. Destructure 'role' from the resolved object
-  const { role } = resolvedParams;
+  // 3. Destructure 'role' directly from params
+  const { role } = params;
 
   const router = useRouter();
   const [isLoaded, setIsLoaded] = useState(false);

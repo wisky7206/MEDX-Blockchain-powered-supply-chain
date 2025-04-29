@@ -12,11 +12,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Removed T
 import { AlertCircle, ArrowUpDown, Box, CheckCircle2, Filter, Package, Plus, Search, X } from "lucide-react";
 import axios from "axios";
 
-// 2. Update props interface to indicate params is a Promise
+// 2. Update props interface
 interface InventoryPageProps {
-  params: Promise<{
+  params: {
     role: "provider" | "manufacturer" | "distributor" | "retailer";
-  }>;
+  };
 }
 
 interface InventoryItem {
@@ -30,10 +30,8 @@ interface InventoryItem {
 }
 
 export default function InventoryPage({ params }: InventoryPageProps) {
-  // 3. Unwrap the params Promise *before* accessing its properties
-  const resolvedParams = use(params);
-  // 4. Destructure 'role' from the resolved object
-  const { role } = resolvedParams;
+  // 3. Destructure 'role' directly from params
+  const { role } = params;
   const { address } = useWallet();
 
   const [isLoaded, setIsLoaded] = useState(false);

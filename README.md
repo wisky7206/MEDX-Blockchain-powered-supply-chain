@@ -1,90 +1,97 @@
-# MEDX - Blockchain-Powered Pharmaceutical Supply Chain
+# MedX - Blockchain Supply Chain Management
 
-This project is a Next.js application designed to simulate and manage a pharmaceutical supply chain using blockchain technology for enhanced transparency and traceability. It features role-based access control for different actors in the supply chain (Providers, Manufacturers, Distributors, Retailers).
+A blockchain-based supply chain management system built with Next.js, MongoDB, and Web3 technologies.
 
 ## Features
 
-* **Role-Based Dashboards:** Separate dashboard views and functionalities tailored for Providers, Manufacturers, Distributors, and Retailers.
-* **User Management:** Wallet-based authentication (MetaMask), user registration, and profile management.
-* **Inventory Management:** Add, view, and manage inventory items (raw materials or finished products depending on role).
-* **Order Management:** Create, view (incoming/outgoing), and potentially update the status of orders.
-* **Blockchain Integration:**
-    * Create orders on an Ethereum-compatible blockchain using a smart contract (via Ethers.js).
-    * Track order status updates potentially linked to blockchain events.
-    * Database records updated with blockchain transaction details.
-* **Supply Chain Tracking:** View the history and journey of products or orders through the supply chain.
-* **Real-time Notifications (Optional):** Uses Socket.IO for potential real-time updates (implementation details not fully shown).
-* **Modern UI:** Built with Tailwind CSS and Shadcn UI components.
+- Wallet Authentication
+- Role-based Access Control
+- Inventory Management
+- Supply Chain Tracking
+- Real-time Updates
+- Blockchain Verification
 
 ## Tech Stack
 
-* **Framework:** Next.js (v15+) - App Router
-* **Language:** TypeScript
-* **Styling:** Tailwind CSS, Shadcn UI
-* **Frontend:** React (v19+)
-* **State Management:** React Context API (`context/wallet-context.tsx`)
-* **Blockchain Interaction:** Ethers.js (v6+)
-* **Database:** MongoDB
-* **ODM:** Mongoose
-* **Backend API:** Next.js API Routes
-* **Package Manager:** PNPM
+- **Frontend:** Next.js 14, React 18, TailwindCSS
+- **Backend:** Next.js API Routes
+- **Database:** MongoDB Atlas
+- **Blockchain:** Ethereum (Web3)
+- **Authentication:** Wallet Connect
 
-## Getting Started
+## Prerequisites
 
-Follow these instructions to get a copy of the project up and running on your local machine for development and testing purposes.
+- Node.js 18+ 
+- MongoDB Atlas Account
+- MetaMask or any Web3 Wallet
+- Yarn/NPM
 
-### Prerequisites
+## Environment Variables
 
-* Node.js (v18.18 or later recommended for Next.js 15)
-* PNPM (Package manager)
-* MongoDB instance (local or cloud like MongoDB Atlas)
-* MetaMask browser extension (or another compatible wallet)
+Create a `.env.local` file in the root directory with the following variables:
 
-### Installation & Setup
+```bash
+MONGODB_URI=your_mongodb_connection_string
+NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your_wallet_connect_project_id
+```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/wisky7206/MEDX-Blockchain-powered-supply-chain.git](https://github.com/wisky7206/MEDX-Blockchain-powered-supply-chain.git)
-    cd MEDX-Blockchain-powered-supply-chain
-    ```
+## Installation
 
-2.  **Install dependencies:**
-    ```bash
-    pnpm install
-    ```
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/medx.git
+cd medx
+```
 
-3.  **Set up Environment Variables:**
-    * Create a file named `.env.local` in the project root.
-    * Add the necessary environment variables. You'll need at least:
-        ```dotenv
-        MONGODB_URI=your_mongodb_connection_string
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
 
-        # Get this after deploying your MedXSupplyChain contract
-        NEXT_PUBLIC_CONTRACT_ADDRESS=your_deployed_contract_address
+3. Run the development server:
+```bash
+npm run dev
+# or
+yarn dev
+```
 
-        # Add any other variables needed (e.g., for authentication, APIs)
-        ```
-    * Replace `your_mongodb_connection_string` and `your_deployed_contract_address` with your actual values.
+4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-4.  **Deploy Smart Contract (If not already done):**
-    * You need to deploy the `MedXSupplyChain.sol` contract (presumably located in a `contracts` directory, though not fully shown in the provided files) to a compatible blockchain (e.g., a local testnet like Hardhat Network, or a public testnet like Sepolia).
-    * Update the `NEXT_PUBLIC_CONTRACT_ADDRESS` in your `.env.local` file with the deployed contract's address.
+## Deployment
 
-### Running the Development Server
+The project is set up to be deployed on Vercel:
 
-1.  **Start the Next.js development server:**
-    ```bash
-    pnpm dev
-    ```
+1. Push your code to GitHub
+2. Import your repository to Vercel
+3. Add environment variables in Vercel project settings
+4. Deploy!
 
-2.  Open [http://localhost:3000](http://localhost:3000) (or the specified port) in your browser.
+## Project Structure
 
-## Usage
+```
+medx/
+├── app/                    # Next.js 14 app directory
+│   ├── api/               # API routes
+│   ├── auth/              # Authentication pages
+│   └── dashboard/         # Dashboard pages
+├── components/            # React components
+├── context/              # React context providers
+├── lib/                  # Utility functions and configurations
+└── public/              # Static files
+```
 
-1.  **Connect Wallet:** Use the "Connect Wallet" button to connect your MetaMask wallet. Ensure your wallet is connected to the same network where the smart contract is deployed.
-2.  **Registration:** If your connected wallet address is not registered in the database, you will likely be prompted to select a role and register.
-3.  **Dashboard:** Once connected and registered, you will be directed to your role-specific dashboard.
-4.  **Navigate:** Use the sidebar or navigation links to access different sections like Inventory, Orders, Tracking, Profile, and Settings.
-5.  **Interact:** Perform actions relevant to your role, such as adding inventory, creating orders (which will interact with both the database and the blockchain), viewing tracking history, etc.
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 

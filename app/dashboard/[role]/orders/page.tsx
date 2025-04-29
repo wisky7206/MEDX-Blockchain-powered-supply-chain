@@ -20,18 +20,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, Clock, FileText, Filter, Plus, Search, XCircle } from "lucide-react";
 import Link from "next/link";
 
-// 2. Update props interface to indicate params is a Promise
+// 2. Update props interface
 interface OrdersPageProps {
-  params: Promise<{
+  params: {
     role: "provider" | "manufacturer" | "distributor" | "retailer";
-  }>;
+  };
 }
 
 export default function OrdersPage({ params }: OrdersPageProps) {
-  // 3. Unwrap the params Promise *before* accessing its properties
-  const resolvedParams = use(params);
-  // 4. Destructure 'role' from the resolved object
-  const { role } = resolvedParams;
+  // 3. Destructure 'role' directly from params
+  const { role } = params;
 
   // Role-specific order data (remains the same)
   const incomingOrders = {

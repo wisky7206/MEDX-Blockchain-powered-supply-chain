@@ -13,16 +13,13 @@ import { Copy, Edit, Save, Shield } from "lucide-react";
 
 // 2. Update props interface to indicate params is a Promise
 interface ProfilePageProps {
-  params: Promise<{
+  params: {
     role: "provider" | "manufacturer" | "distributor" | "retailer";
-  }>;
+  };
 }
 
 export default function ProfilePage({ params }: ProfilePageProps) {
-  // 3. Unwrap the params Promise *before* accessing its properties
-  const resolvedParams = use(params);
-  // 4. Destructure 'role' from the resolved object
-  const { role } = resolvedParams;
+  const { role } = params;
 
   // Get address from wallet context
   const { address, userData, updateUserProfile } = useWallet(); // Assuming updateUserProfile and userData exist in context
