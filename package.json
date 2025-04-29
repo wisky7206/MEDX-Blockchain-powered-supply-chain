@@ -1,13 +1,12 @@
 {
-  "name": "inventory-management",
+  "name": "medx-supply-chain",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "seed:inventory": "ts-node scripts/seed-inventory.ts"
+    "lint": "next lint"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -30,7 +29,7 @@
     "ethers": "^6.13.7",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.503.0",
-    "mongoose": "^8.13.2",
+    "mongodb": "^6.3.0",
     "next": "14.1.0",
     "next-themes": "^0.4.6",
     "react": "^18",
@@ -40,11 +39,10 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^3.2.0",
-    "web3": "^4.4.0",
-    "mongodb": "^6.3.0",
-    "@types/mongodb": "^4.0.7"
+    "web3": "^4.4.0"
   },
   "devDependencies": {
+    "@types/mongodb": "^4.0.7",
     "@types/node": "^20.17.32",
     "@types/react": "^18.3.20",
     "@types/react-dom": "^18.3.6",
